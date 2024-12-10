@@ -1,6 +1,7 @@
 package ftp
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -70,7 +71,7 @@ var listTests = []line{
 	{"08-10-15  02:04PM       <DIR>          Billing", "Billing", 0, EntryTypeFolder, newTime(2015, time.August, 10, 14, 4)},
 	{"08-07-2015  07:50PM                  718 Post_PRR_20150901_1166_265118_13049.dat", "Post_PRR_20150901_1166_265118_13049.dat", 718, EntryTypeFile, newTime(2015, time.August, 7, 19, 50)},
 	{"08-10-2015  02:04PM       <DIR>          Billing", "Billing", 0, EntryTypeFolder, newTime(2015, time.August, 10, 14, 4)},
-	
+
 	// dir and file names that contain multiple spaces
 	{"drwxr-xr-x    3 110      1002            3 Dec 02  2009 spaces   dir   name", "spaces   dir   name", 0, EntryTypeFolder, newTime(2009, time.December, 2)},
 	{"-rwxr-xr-x    3 110      1002            1234567 Dec 02  2009 file   name", "file   name", 1234567, EntryTypeFile, newTime(2009, time.December, 2)},
@@ -107,9 +108,15 @@ func TestParseValidListLine(t *testing.T) {
 			entry, err := parseListLine(lt.line, now, time.UTC)
 
 			if assert.NoError(err) {
-				assert.Equal(lt.name, entry.Name)
-				assert.Equal(lt.entryType, entry.Type)
-				assert.Equal(lt.size, entry.Size)
+				assert.Equal(lt.name, entry.Name())
+				if lt.entryType == EntryTypeFolder {
+					assert.True(entry.FileMode.IsDir())
+				} else if lt.entryType == EntryTypeFile {
+					assert.True(entry.FileMode.IsRegular())
+				} else {
+					assert.True(entry.FileMode&os.ModeSymlink > 0)
+				}
+				assert.Equal(lt.size, entry.EntrySize)
 				assert.Equal(lt.time, entry.Time)
 			}
 		})
@@ -123,9 +130,9 @@ func TestParseSymlinks(t *testing.T) {
 			entry, err := parseListLine(lt.line, now, time.UTC)
 
 			if assert.NoError(err) {
-				assert.Equal(lt.name, entry.Name)
+				assert.Equal(lt.name, entry.Name())
 				assert.Equal(lt.target, entry.Target)
-				assert.Equal(EntryTypeLink, entry.Type)
+				assert.True(entry.FileMode&os.ModeSymlink > 0)
 			}
 		})
 	}

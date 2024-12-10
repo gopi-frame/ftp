@@ -117,14 +117,15 @@ func testConn(t *testing.T, disableEPSV bool) {
 	if entry == nil {
 		t.Fatal("expected entry, got nil")
 	}
-	if entry.Size != 42 {
-		t.Errorf("entry size %q, expected %q", entry.Size, 42)
+	if entry.EntrySize != 42 {
+		t.Errorf("entry size %q, expected %q", entry.EntrySize, 42)
 	}
-	if entry.Type != EntryTypeFile {
-		t.Errorf("entry type %q, expected %q", entry.Type, EntryTypeFile)
+	if !entry.FileMode.IsRegular() {
+		t.Errorf("file mode isRegular %t, expected true", entry.FileMode.IsRegular())
+		//t.Errorf("entry type %q, expected %q", entry.Type, EntryTypeFile)
 	}
-	if entry.Name != "magic-file" {
-		t.Errorf("entry name %q, expected %q", entry.Name, "magic-file")
+	if entry.EntryName != "magic-file" {
+		t.Errorf("entry name %q, expected %q", entry.Name(), "magic-file")
 	}
 
 	entry, err = c.GetEntry("multiline-dir")
@@ -134,14 +135,14 @@ func testConn(t *testing.T, disableEPSV bool) {
 	if entry == nil {
 		t.Fatal("expected entry, got nil")
 	}
-	if entry.Size != 0 {
-		t.Errorf("entry size %q, expected %q", entry.Size, 0)
+	if entry.EntrySize != 0 {
+		t.Errorf("entry size %q, expected %q", entry.EntrySize, 0)
 	}
-	if entry.Type != EntryTypeFolder {
-		t.Errorf("entry type %q, expected %q", entry.Type, EntryTypeFolder)
+	if !entry.FileMode.IsDir() {
+		t.Errorf("entry file mode isDir %t, expected true", entry.FileMode.IsDir())
 	}
-	if entry.Name != "multiline-dir" {
-		t.Errorf("entry name %q, expected %q", entry.Name, "multiline-dir")
+	if entry.EntryName != "multiline-dir" {
+		t.Errorf("entry name %q, expected %q", entry.Name(), "multiline-dir")
 	}
 
 	err = c.Delete("tset")

@@ -2,6 +2,7 @@ package ftp
 
 import (
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -33,17 +34,17 @@ func TestFieldsReturnCorrectData(t *testing.T) {
 			path: "/root/",
 			err:  fmt.Errorf("this is an error"),
 			entry: &Entry{
-				Name: "root",
-				Size: 123,
-				Time: time.Now(),
-				Type: EntryTypeFolder,
+				EntryName: "root",
+				EntrySize: 123,
+				Time:      time.Now(),
+				FileMode:  os.ModeDir,
 			},
 		},
 	}
 
 	assert.Equal(t, "this is an error", w.Err().Error())
 	assert.Equal(t, "/root/", w.Path())
-	assert.Equal(t, EntryTypeFolder, w.Stat().Type)
+	assert.True(t, w.Stat().FileMode.IsDir())
 }
 
 func TestSkipDirIsCorrectlySet(t *testing.T) {
@@ -71,10 +72,10 @@ func TestNoDescendDoesNotAddToStack(t *testing.T) {
 		path: "/root/",
 		err:  nil,
 		entry: &Entry{
-			Name: "root",
-			Size: 123,
-			Time: time.Now(),
-			Type: EntryTypeFolder,
+			EntryName: "root",
+			EntrySize: 123,
+			Time:      time.Now(),
+			FileMode:  os.ModeDir,
 		},
 	}
 
@@ -83,10 +84,10 @@ func TestNoDescendDoesNotAddToStack(t *testing.T) {
 			path: "file",
 			err:  nil,
 			entry: &Entry{
-				Name: "file",
-				Size: 123,
-				Time: time.Now(),
-				Type: EntryTypeFile,
+				EntryName: "file",
+				EntrySize: 123,
+				Time:      time.Now(),
+				FileMode:  os.ModePerm,
 			},
 		},
 	}
@@ -116,10 +117,10 @@ func TestEmptyStackReturnsFalse(t *testing.T) {
 		path: "/root/",
 		err:  nil,
 		entry: &Entry{
-			Name: "root",
-			Size: 123,
-			Time: time.Now(),
-			Type: EntryTypeFolder,
+			EntryName: "root",
+			EntrySize: 123,
+			Time:      time.Now(),
+			FileMode:  os.ModeDir,
 		},
 	}
 
@@ -147,10 +148,10 @@ func TestCurAndStackSetCorrectly(t *testing.T) {
 		path: "root/file1",
 		err:  nil,
 		entry: &Entry{
-			Name: "file1",
-			Size: 123,
-			Time: time.Now(),
-			Type: EntryTypeFile,
+			EntryName: "file1",
+			EntrySize: 123,
+			Time:      time.Now(),
+			FileMode:  os.ModePerm,
 		},
 	}
 
@@ -159,20 +160,20 @@ func TestCurAndStackSetCorrectly(t *testing.T) {
 			path: "file",
 			err:  nil,
 			entry: &Entry{
-				Name: "file",
-				Size: 123,
-				Time: time.Now(),
-				Type: EntryTypeFile,
+				EntryName: "file",
+				EntrySize: 123,
+				Time:      time.Now(),
+				FileMode:  os.ModePerm,
 			},
 		},
 		{
 			path: "root/file1",
 			err:  nil,
 			entry: &Entry{
-				Name: "file1",
-				Size: 123,
-				Time: time.Now(),
-				Type: EntryTypeFile,
+				EntryName: "file1",
+				EntrySize: 123,
+				Time:      time.Now(),
+				FileMode:  os.ModePerm,
 			},
 		},
 	}
@@ -184,7 +185,7 @@ func TestCurAndStackSetCorrectly(t *testing.T) {
 
 	assert.Equal(true, result, "Result should return true")
 	assert.Equal(0, len(w.stack))
-	assert.Equal("file", w.cur.entry.Name)
+	assert.Equal("file", w.cur.entry.Name())
 }
 
 func TestCurInit(t *testing.T) {

@@ -3,6 +3,7 @@ package ftp
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -42,9 +43,9 @@ func parseNextRFC3659ListLine(line string, loc *time.Location, e *Entry) (*Entry
 	}
 
 	name := line[iWhitespace+1:]
-	if e.Name == "" {
-		e.Name = name
-	} else if e.Name != name {
+	if e.EntryName == "" {
+		e.EntryName = name
+	} else if e.EntryName != name {
 		// All lines must have the same name
 		return nil, errUnsupportedListLine
 	}
@@ -68,9 +69,9 @@ func parseNextRFC3659ListLine(line string, loc *time.Location, e *Entry) (*Entry
 		case "type":
 			switch value {
 			case "dir", "cdir", "pdir":
-				e.Type = EntryTypeFolder
+				e.FileMode |= os.ModeDir
 			case "file":
-				e.Type = EntryTypeFile
+				e.FileMode |= os.ModePerm
 			}
 		case "size":
 			if err := e.setSize(value); err != nil {
@@ -101,8 +102,11 @@ func parseLsListLine(line string, now time.Time, loc *time.Location) (*Entry, er
 
 	if fields[1] == "folder" && fields[2] == "0" {
 		e := &Entry{
-			Type: EntryTypeFolder,
-			Name: scanner.Remaining(),
+			FileMode:  os.ModeDir,
+			EntryName: scanner.Remaining(),
+		}
+		if err := e.setFileMode(fields[0]); err != nil {
+			return nil, err
 		}
 		if err := e.setTime(fields[3:6], now, loc); err != nil {
 			return nil, err
@@ -114,10 +118,12 @@ func parseLsListLine(line string, now time.Time, loc *time.Location) (*Entry, er
 	if fields[1] == "0" {
 		fields = append(fields, scanner.Next())
 		e := &Entry{
-			Type: EntryTypeFile,
-			Name: scanner.Remaining(),
+			FileMode:  os.FileMode(0),
+			EntryName: scanner.Remaining(),
 		}
-
+		if err := e.setFileMode(fields[0]); err != nil {
+			return nil, err
+		}
 		if err := e.setSize(fields[2]); err != nil {
 			return nil, errUnsupportedListLine
 		}
@@ -135,28 +141,31 @@ func parseLsListLine(line string, now time.Time, loc *time.Location) (*Entry, er
 	}
 
 	e := &Entry{
-		Name: scanner.Remaining(),
+		EntryName: scanner.Remaining(),
 	}
+
 	switch fields[0][0] {
 	case '-':
-		e.Type = EntryTypeFile
+		e.FileMode |= os.FileMode(0)
 		if err := e.setSize(fields[4]); err != nil {
 			return nil, err
 		}
 	case 'd':
-		e.Type = EntryTypeFolder
+		e.FileMode |= os.ModeDir
 	case 'l':
-		e.Type = EntryTypeLink
+		e.FileMode |= os.ModeSymlink
 
 		// Split link name and target
-		if i := strings.Index(e.Name, " -> "); i > 0 {
-			e.Target = e.Name[i+4:]
-			e.Name = e.Name[:i]
+		if i := strings.Index(e.EntryName, " -> "); i > 0 {
+			e.Target = e.EntryName[i+4:]
+			e.EntryName = e.EntryName[:i]
 		}
 	default:
 		return nil, errUnknownListEntryType
 	}
-
+	if err := e.setFileMode(fields[0]); err != nil {
+		return nil, err
+	}
 	if err := e.setTime(fields[5:8], now, loc); err != nil {
 		return nil, err
 	}
@@ -187,22 +196,22 @@ func parseDirListLine(line string, now time.Time, loc *time.Location) (*Entry, e
 
 	line = strings.TrimLeft(line, " ")
 	if strings.HasPrefix(line, "<DIR>") {
-		e.Type = EntryTypeFolder
+		e.FileMode |= os.ModeDir
 		line = strings.TrimPrefix(line, "<DIR>")
 	} else {
 		space := strings.Index(line, " ")
 		if space == -1 {
 			return nil, errUnsupportedListLine
 		}
-		e.Size, err = strconv.ParseUint(line[:space], 10, 64)
+		e.EntrySize, err = strconv.ParseUint(line[:space], 10, 64)
 		if err != nil {
 			return nil, errUnsupportedListLine
 		}
-		e.Type = EntryTypeFile
+		e.FileMode |= os.FileMode(0)
 		line = line[space:]
 	}
 
-	e.Name = strings.TrimLeft(line, " ")
+	e.EntryName = strings.TrimLeft(line, " ")
 	return e, nil
 }
 
@@ -240,7 +249,7 @@ func parseListLine(line string, now time.Time, loc *time.Location) (*Entry, erro
 }
 
 func (e *Entry) setSize(str string) (err error) {
-	e.Size, err = strconv.ParseUint(str, 0, 64)
+	e.EntrySize, err = strconv.ParseUint(str, 0, 64)
 	return
 }
 
@@ -274,4 +283,39 @@ func (e *Entry) setTime(fields []string, now time.Time, loc *time.Location) (err
 		e.Time, err = time.ParseInLocation("_2 Jan 2006 15:04", timeStr, loc)
 	}
 	return
+}
+
+func (e *Entry) setFileMode(mode string) (err error) {
+	if len(mode) < 10 {
+		return errors.New("invalid file mode")
+	}
+	switch mode[0] {
+	case 'd':
+		e.FileMode |= os.ModeDir
+	case 'l':
+		e.FileMode |= os.ModeSymlink
+	case '-':
+		e.FileMode |= os.FileMode(0)
+	default:
+		return errors.New("invalid file mode")
+	}
+	var p = func(perm string) uint32 {
+		if len(perm) != 3 {
+			return 0
+		}
+		permChars := [...]uint8{'r', 'w', 'x'}
+		permBits := [...]uint32{4, 2, 1}
+		sum := uint32(0)
+		for i := range perm {
+			if perm[i] == permChars[i] {
+				sum += permBits[i]
+			}
+		}
+		return sum
+	}
+	ownerPerm := p(mode[1:4]) * 100
+	groupPerm := p(mode[4:7]) * 10
+	otherPerm := p(mode[7:10])
+	e.FileMode |= os.FileMode(ownerPerm + groupPerm + otherPerm)
+	return nil
 }

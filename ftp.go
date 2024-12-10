@@ -9,8 +9,10 @@ import (
 	"crypto/tls"
 	"errors"
 	"io"
+	"io/fs"
 	"net"
 	"net/textproto"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -89,11 +91,12 @@ type dialOptions struct {
 
 // Entry describes a file and is returned by List().
 type Entry struct {
-	Name   string
-	Target string // target of symbolic link
-	Type   EntryType
-	Size   uint64
-	Time   time.Time
+	EntryName string
+	Target    string // target of symbolic link
+	//Type     EntryType
+	FileMode  os.FileMode
+	EntrySize uint64
+	Time      time.Time
 }
 
 // Response represents a data-connection
@@ -794,6 +797,29 @@ func (c *ServerConn) GetEntry(path string) (entry *Entry, err error) {
 	return e, nil
 }
 
+func (c *ServerConn) Stat(path string) (entry *Entry, err error) {
+	_, msg, err := c.cmd(StatusFile, "STAT %s", path)
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(msg, "\n")
+	if len(lines) < 3 {
+		return nil, errors.New("invalid response")
+	}
+	var e *Entry
+	if c.mlstSupported && !c.options.forceListHidden {
+		e, err = parseRFC3659ListLine(lines[1], time.Now(), c.options.location)
+	} else {
+		e, err = parseListLine(lines[1], time.Now(), c.options.location)
+	}
+	return e, err
+}
+
+func (c *ServerConn) ChangeMode(path string, mode os.FileMode) error {
+	_, _, err := c.cmd(StatusRequestedFileActionOK, "SITE CHMOD %o %s", mode, path)
+	return err
+}
+
 // IsTimePreciseInList returns true if client and server support the MLSD
 // command so List can return time with 1-second precision for all files.
 func (c *ServerConn) IsTimePreciseInList() bool {
@@ -1042,14 +1068,14 @@ func (c *ServerConn) RemoveDirRecur(path string) error {
 	}
 
 	for _, entry := range entries {
-		if entry.Name != ".." && entry.Name != "." {
-			if entry.Type == EntryTypeFolder {
-				err = c.RemoveDirRecur(currentDir + "/" + entry.Name)
+		if entry.EntryName != ".." && entry.EntryName != "." {
+			if entry.FileMode.IsDir() {
+				err = c.RemoveDirRecur(currentDir + "/" + entry.EntryName)
 				if err != nil {
 					return err
 				}
 			} else {
-				err = c.Delete(entry.Name)
+				err = c.Delete(entry.EntryName)
 				if err != nil {
 					return err
 				}
@@ -1157,4 +1183,36 @@ func (r *Response) SetDeadline(t time.Time) error {
 // String returns the string representation of EntryType t.
 func (t EntryType) String() string {
 	return [...]string{"file", "folder", "link"}[t]
+}
+
+func (e *Entry) Name() string {
+	return e.EntryName
+}
+
+func (e *Entry) IsDir() bool {
+	return e.FileMode.IsDir()
+}
+
+func (e *Entry) Type() fs.FileMode {
+	return e.FileMode.Type()
+}
+
+func (e *Entry) Info() (fs.FileInfo, error) {
+	return e, nil
+}
+
+func (e *Entry) Size() int64 {
+	return int64(e.EntrySize)
+}
+
+func (e *Entry) Mode() fs.FileMode {
+	return e.FileMode
+}
+
+func (e *Entry) ModTime() time.Time {
+	return e.Time
+}
+
+func (e *Entry) Sys() interface{} {
+	return nil
 }
