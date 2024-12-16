@@ -657,6 +657,11 @@ func (c *ServerConn) cmdDataConnFrom(offset uint64, format string, args ...inter
 	return conn, nil
 }
 
+// Cmd executes a command and returns the response.
+func (c *ServerConn) Cmd(expected int, format string, args ...interface{}) (int, string, error) {
+	return c.cmd(expected, format, args...)
+}
+
 // Type switches the transfer mode for the connection.
 func (c *ServerConn) Type(transferType TransferType) (err error) {
 	_, _, err = c.cmd(StatusCommandOK, "TYPE "+string(transferType))
@@ -816,7 +821,7 @@ func (c *ServerConn) Stat(path string) (entry *Entry, err error) {
 }
 
 func (c *ServerConn) ChangeMode(path string, mode os.FileMode) error {
-	_, _, err := c.cmd(StatusRequestedFileActionOK, "SITE CHMOD %o %s", mode, path)
+	_, _, err := c.cmd(StatusCommandOK, "SITE CHMOD %o %s", mode, path)
 	return err
 }
 
